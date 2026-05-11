@@ -1,0 +1,82 @@
+name: Daily API Key Scanner
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2:00 AM UTC
+  workflow_dispatch:
+    inputs:
+      max_repos:
+        description: 'Max repos per discovery method'
+        required: false
+        default: '50'
+      orgs:
+        description: 'Comma-separated org names to scan'
+        required: false
+        default: ''
+      skip_sheets:
+        description: 'Skip saving to Google Sheets'
+        required: false
+        type: boolean
+        default: false
+      skip_email:
+        description: 'Skip email alerts'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Write Google credentials
+        if: ${{ !inputs.skip_sheets }}
+        run: echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > config/google_credentials.json
+
+      - name: Run automated scan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
+          GOOGLE_CREDENTIALS_PATH: ./config/google_credentials.json
+          GOOGLE_SHEET_NAME: ${{ secrets.GOOGLE_SHEET_NAME || 'API_Keys_Scan_Results' }}
+          SHARE_WITH_EMAIL: ${{ secrets.SHARE_WITH_EMAIL }}
+          SMTP_HOST: smtp.gmail.com
+          SMTP_PORT: '587'
+          SMTP_EMAIL: ${{ secrets.SMTP_EMAIL }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+          DISCOVERY_MAX_REPOS: ${{ inputs.max_repos || '50' }}
+          DISCOVERY_ORGS: ${{ inputs.orgs || secrets.DISCOVERY_ORGS || '' }}
+          MAX_REPOS: '100'
+          SCAN_COMMIT_HISTORY: 'true'
+          MAX_COMMITS_PER_REPO: '200'
+          CLONE_DEPTH: '50'
+        run: |
+          python run_automated.py \
+            --max-repos-per-method ${{ inputs.max_repos || '50' }} \
+            ${{ inputs.skip_sheets && '--no-sheets' || '' }} \
+            ${{ inputs.skip_email && '--no-email' || '' }}
+
+      - name: Upload scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-results-${{ github.run_number }}
+          path: scan_results_*.json
+          retention-days: 30
+
+      - name: Cleanup temp repos
+        if: always()
+        run: rm -rf temp_repos/
