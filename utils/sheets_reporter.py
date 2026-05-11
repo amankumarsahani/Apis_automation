@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -32,6 +33,9 @@ HEADER_ROW = [
     "Commit Author",
     "Additional Info",
 ]
+
+WRITE_BATCH_SIZE = 500
+RATE_LIMIT_PAUSE = 5
 
 
 class SheetsReporter:
@@ -138,33 +142,64 @@ class SheetsReporter:
             ])
 
         if rows:
-            self.worksheet.append_rows(rows, value_input_option="RAW")
-            self._apply_conditional_formatting()
+            self._batch_append_rows(rows)
+            self._apply_conditional_formatting_rules()
             log.info(f"Saved {len(rows)} findings to Google Sheets")
 
+        time.sleep(RATE_LIMIT_PAUSE)
         self._add_summary_sheet(findings)
 
         sheet_url = f"https://docs.google.com/spreadsheets/d/{self.spreadsheet.id}"
         log.info(f"Results saved: {sheet_url}")
         return sheet_url
 
-    def _apply_conditional_formatting(self):
+    def _batch_append_rows(self, rows: list):
+        for i in range(0, len(rows), WRITE_BATCH_SIZE):
+            batch = rows[i:i + WRITE_BATCH_SIZE]
+            self.worksheet.append_rows(batch, value_input_option="RAW")
+            if i + WRITE_BATCH_SIZE < len(rows):
+                log.info(f"  Wrote {i + len(batch)}/{len(rows)} rows, pausing for rate limit...")
+                time.sleep(RATE_LIMIT_PAUSE)
+
+    def _apply_conditional_formatting_rules(self):
+        """Use a single batch_update with conditional formatting rules instead of per-row API calls."""
         try:
-            all_data = self.worksheet.get_all_values()
-            for row_idx, row in enumerate(all_data[1:], start=2):
-                is_active = row[6] if len(row) > 6 else ""
-                if is_active == "YES":
-                    self.worksheet.format(f"G{row_idx}", {
-                        "backgroundColor": {"red": 1, "green": 0.8, "blue": 0.8},
-                        "textFormat": {"bold": True, "foregroundColor": {"red": 0.8, "green": 0, "blue": 0}},
-                    })
-                elif is_active == "NO":
-                    self.worksheet.format(f"G{row_idx}", {
-                        "backgroundColor": {"red": 0.85, "green": 0.95, "blue": 0.85},
-                        "textFormat": {"foregroundColor": {"red": 0, "green": 0.5, "blue": 0}},
-                    })
+            sheet_id = self.worksheet.id
+            requests = [
+                {
+                    "addConditionalFormatRule": {
+                        "rule": {
+                            "ranges": [{"sheetId": sheet_id, "startRowIndex": 1, "startColumnIndex": 6, "endColumnIndex": 7}],
+                            "booleanRule": {
+                                "condition": {"type": "TEXT_EQ", "values": [{"userEnteredValue": "YES"}]},
+                                "format": {
+                                    "backgroundColor": {"red": 1, "green": 0.8, "blue": 0.8},
+                                    "textFormat": {"bold": True, "foregroundColor": {"red": 0.8, "green": 0, "blue": 0}},
+                                },
+                            },
+                        },
+                        "index": 0,
+                    }
+                },
+                {
+                    "addConditionalFormatRule": {
+                        "rule": {
+                            "ranges": [{"sheetId": sheet_id, "startRowIndex": 1, "startColumnIndex": 6, "endColumnIndex": 7}],
+                            "booleanRule": {
+                                "condition": {"type": "TEXT_EQ", "values": [{"userEnteredValue": "NO"}]},
+                                "format": {
+                                    "backgroundColor": {"red": 0.85, "green": 0.95, "blue": 0.85},
+                                    "textFormat": {"foregroundColor": {"red": 0, "green": 0.5, "blue": 0}},
+                                },
+                            },
+                        },
+                        "index": 1,
+                    }
+                },
+            ]
+            self.spreadsheet.batch_update({"requests": requests})
         except Exception as e:
-            log.warning(f"Could not apply formatting: {e}")
+            log.warning(f"Could not apply formatting rules: {e}")
 
     def _add_summary_sheet(self, findings: list[dict]):
         try:
@@ -206,10 +241,13 @@ class SheetsReporter:
 
         summary_ws.update(summary_data, value_input_option="RAW")
 
-        summary_ws.format("A1", {
-            "textFormat": {"bold": True, "fontSize": 14},
-        })
-        summary_ws.format("A4", {
-            "backgroundColor": {"red": 1, "green": 0.8, "blue": 0.8},
-            "textFormat": {"bold": True},
-        })
+        try:
+            summary_ws.format("A1", {
+                "textFormat": {"bold": True, "fontSize": 14},
+            })
+            summary_ws.format("A4", {
+                "backgroundColor": {"red": 1, "green": 0.8, "blue": 0.8},
+                "textFormat": {"bold": True},
+            })
+        except Exception as e:
+            log.warning(f"Could not format summary: {e}")
