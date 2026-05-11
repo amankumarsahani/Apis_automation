@@ -11,7 +11,7 @@ from github import Github, GithubException
 from git import Repo as GitRepo, InvalidGitRepositoryError
 
 from config.settings import settings
-from scanners.patterns import get_patterns, SKIP_EXTENSIONS, SKIP_DIRS, KeyPattern
+from scanners.patterns import get_patterns, SKIP_EXTENSIONS, SKIP_DIRS, SKIP_PATH_PATTERNS, KeyPattern
 from scanners.entropy_scanner import scan_content_entropy
 
 log = logging.getLogger(__name__)
@@ -304,6 +304,22 @@ class GitHubScanner:
             if len(key_value) < 8:
                 return True
 
+        framework_config_indicators = [
+            "config.", "devise", "secret_key_base", "pepper",
+            "secret_token", "encryption_key", "master.key",
+            "rails.application", "application.config",
+            "initializer", "doorkeeper", "omniauth",
+            "warden", "bcrypt", "argon2",
+        ]
+        for indicator in framework_config_indicators:
+            if indicator in line_lower:
+                return True
+
+        if key_value.startswith("ENV[") or key_value.startswith("ENV.fetch"):
+            return True
+        if key_value.startswith("Rails.") or key_value.startswith("config."):
+            return True
+
         return False
 
     def _should_skip(self, relative_path: Path) -> bool:
@@ -312,6 +328,10 @@ class GitHubScanner:
                 return True
 
         if relative_path.suffix.lower() in SKIP_EXTENSIONS:
+            return True
+
+        path_str = str(relative_path).lower()
+        if any(skip in path_str for skip in SKIP_PATH_PATTERNS):
             return True
 
         return False

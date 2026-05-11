@@ -58,22 +58,25 @@ class ScanOrchestrator:
         if active_count > 0:
             log.warning(f"ALERT: {active_count} ACTIVE API keys found! These should be rotated immediately.")
 
-        sheet_url = ""
-        if results and self.save_to_sheets:
-            try:
-                sheet_url = self.reporter.save_results(results, scan_label)
-                log.info(f"Results saved to Google Sheets: {sheet_url}")
-            except Exception as e:
-                log.error(f"Failed to save to Google Sheets: {e}")
-                log.info("Results are still available in the return value.")
-
         return {
             "total_findings": len(results),
             "active_keys": active_count,
             "inactive_keys": inactive_count,
-            "sheet_url": sheet_url,
+            "sheet_url": "",
             "findings": results,
         }
+
+    def save_all_to_sheets(self, all_results: list[dict], scan_label: str = "") -> str:
+        if not self.reporter or not all_results:
+            return ""
+        try:
+            label = scan_label or f"Scan_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            sheet_url = self.reporter.save_results(all_results, label)
+            log.info(f"All results saved to Google Sheets: {sheet_url}")
+            return sheet_url
+        except Exception as e:
+            log.error(f"Failed to save to Google Sheets: {e}")
+            return ""
 
     def _merge_finding_and_result(self, finding: KeyFinding, test_result: TestResult) -> dict:
         return {

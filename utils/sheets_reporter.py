@@ -58,16 +58,24 @@ class SheetsReporter:
             self.spreadsheet = self.client.open(sheet_name)
             log.info(f"Opened existing spreadsheet: {sheet_name}")
         except gspread.SpreadsheetNotFound:
-            self.spreadsheet = self.client.create(sheet_name)
-            log.info(f"Created new spreadsheet: {sheet_name}")
-
-            if settings.SHARE_WITH_EMAIL:
-                self.spreadsheet.share(
-                    settings.SHARE_WITH_EMAIL,
-                    perm_type="user",
-                    role="writer",
+            log.warning(f"Spreadsheet '{sheet_name}' not found. Attempting to create...")
+            try:
+                self.spreadsheet = self.client.create(sheet_name)
+                log.info(f"Created new spreadsheet: {sheet_name}")
+                if settings.SHARE_WITH_EMAIL:
+                    self.spreadsheet.share(
+                        settings.SHARE_WITH_EMAIL,
+                        perm_type="user",
+                        role="writer",
+                    )
+                    log.info(f"Shared spreadsheet with {settings.SHARE_WITH_EMAIL}")
+            except gspread.exceptions.APIError as e:
+                log.error(f"Cannot create spreadsheet: {e}")
+                log.error(
+                    "Fix: Manually create a Google Sheet named "
+                    f"'{sheet_name}' and share it with the service account email as Editor."
                 )
-                log.info(f"Shared spreadsheet with {settings.SHARE_WITH_EMAIL}")
+                raise
 
         return self.spreadsheet
 

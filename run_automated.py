@@ -81,10 +81,8 @@ def run_automated_scan(
                 all_findings.extend(batch_findings)
                 all_active += result.get("active_keys", 0)
                 all_inactive += result.get("inactive_keys", 0)
-                if result.get("sheet_url"):
-                    sheet_url = result["sheet_url"]
                 for repo_name in batch_names:
-                    findings_for_repo = sum(1 for f in batch_findings if repo_name in f.get("repo", ""))
+                    findings_for_repo = sum(1 for f in batch_findings if repo_name in f.get("repo_name", ""))
                     history.record_repo_scan(repo_name, findings_for_repo)
             except Exception as e:
                 log.error(f"Batch scan failed: {e}")
@@ -100,8 +98,6 @@ def run_automated_scan(
                 all_findings.extend(user_findings)
                 all_active += result.get("active_keys", 0)
                 all_inactive += result.get("inactive_keys", 0)
-                if result.get("sheet_url"):
-                    sheet_url = result["sheet_url"]
                 history.record_user_scan(username, len(user_findings))
             except Exception as e:
                 log.error(f"User scan failed for {username}: {e}")
@@ -109,6 +105,9 @@ def run_automated_scan(
                 orchestrator.scanner.clear_findings()
 
     history.save()
+
+    if all_findings and save_to_sheets:
+        sheet_url = orchestrator.save_all_to_sheets(all_findings, scan_label=f"Scan_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
 
     combined_results = {
         "total_findings": len(all_findings),

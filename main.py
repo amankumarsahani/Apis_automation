@@ -127,12 +127,19 @@ def main():
 
     if args.command == "scan-user":
         results = orchestrator.scan_user(args.username, getattr(args, "max_repos", 0))
+        if not skip_sheets and results.get("findings"):
+            results["sheet_url"] = orchestrator.save_all_to_sheets(results["findings"], f"User_{args.username}")
     elif args.command == "scan-repo":
         results = orchestrator.scan_single_url(args.url)
+        if not skip_sheets and results.get("findings"):
+            repo_name = args.url.rstrip("/").split("/")[-1]
+            results["sheet_url"] = orchestrator.save_all_to_sheets(results["findings"], f"Repo_{repo_name}")
     elif args.command == "scan-repos":
         with open(args.file) as f:
             urls = [line.strip() for line in f if line.strip() and not line.startswith("#")]
         results = orchestrator.scan_urls(urls)
+        if not skip_sheets and results.get("findings"):
+            results["sheet_url"] = orchestrator.save_all_to_sheets(results["findings"], "URL_Scan")
     elif args.command == "scan-discover":
         from run_automated import run_automated_scan
         results = run_automated_scan(
