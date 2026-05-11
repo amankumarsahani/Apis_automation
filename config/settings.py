@@ -27,8 +27,12 @@ class Settings:
     ALERT_EMAIL: str = os.getenv("ALERT_EMAIL", "")
 
     # Discovery settings
-    DISCOVERY_MAX_REPOS: int = int(os.getenv("DISCOVERY_MAX_REPOS", "50"))
+    DISCOVERY_MAX_REPOS: int = int(os.getenv("DISCOVERY_MAX_REPOS", "100"))
     DISCOVERY_ORGS: str = os.getenv("DISCOVERY_ORGS", "")
+
+    # Scan history (skip already-scanned repos)
+    SCAN_HISTORY_PATH: str = os.getenv("SCAN_HISTORY_PATH", "./scan_history.json")
+    RESCAN_AFTER_DAYS: int = int(os.getenv("RESCAN_AFTER_DAYS", "7"))
 
     # Scan settings
     MAX_REPOS: int = int(os.getenv("MAX_REPOS", "100"))

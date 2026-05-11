@@ -8,7 +8,7 @@ on:
       max_repos:
         description: 'Max repos per discovery method'
         required: false
-        default: '50'
+        default: '100'
       orgs:
         description: 'Comma-separated org names to scan'
         required: false
@@ -42,6 +42,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Restore scan history
+        uses: actions/cache@v4
+        with:
+          path: scan_history.json
+          key: scan-history-${{ github.ref }}
+          restore-keys: |
+            scan-history-
+
       - name: Write Google credentials
         if: ${{ !inputs.skip_sheets }}
         run: echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > config/google_credentials.json
@@ -57,15 +65,17 @@ jobs:
           SMTP_EMAIL: ${{ secrets.SMTP_EMAIL }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
-          DISCOVERY_MAX_REPOS: ${{ inputs.max_repos || '50' }}
+          DISCOVERY_MAX_REPOS: ${{ inputs.max_repos || '100' }}
           DISCOVERY_ORGS: ${{ inputs.orgs || secrets.DISCOVERY_ORGS || '' }}
           MAX_REPOS: '100'
           SCAN_COMMIT_HISTORY: 'true'
           MAX_COMMITS_PER_REPO: '200'
           CLONE_DEPTH: '50'
+          SCAN_HISTORY_PATH: ./scan_history.json
+          RESCAN_AFTER_DAYS: '7'
         run: |
           python run_automated.py \
-            --max-repos-per-method ${{ inputs.max_repos || '50' }} \
+            --max-repos-per-method ${{ inputs.max_repos || '100' }} \
             ${{ inputs.skip_sheets && '--no-sheets' || '' }} \
             ${{ inputs.skip_email && '--no-email' || '' }}
 

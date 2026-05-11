@@ -15,6 +15,7 @@ from typing import Optional
 from github import Github, GithubException, RateLimitExceededException
 
 from config.settings import settings
+from utils.scan_history import ScanHistory
 
 log = logging.getLogger(__name__)
 
@@ -22,11 +23,12 @@ log = logging.getLogger(__name__)
 class TargetDiscovery:
     """Discovers GitHub repos/users likely to have leaked secrets."""
 
-    def __init__(self, token: str = ""):
+    def __init__(self, token: str = "", scan_history: Optional[ScanHistory] = None):
         self.token = token or settings.GITHUB_TOKEN
         self.github = Github(self.token) if self.token else Github()
         self._discovered_repos: set[str] = set()
         self._discovered_users: set[str] = set()
+        self.history = scan_history or ScanHistory()
 
     def discover_all(
         self,
@@ -84,8 +86,17 @@ class TargetDiscovery:
         # Deduplicate
         results["repos"] = list(set(results["repos"]))
         results["users"] = list(set(results["users"]))
+
+        # Filter out repos/users already scanned within rescan window
+        pre_filter_repos = len(results["repos"])
+        pre_filter_users = len(results["users"])
+        results["repos"] = self.history.filter_new_repos(results["repos"])
+        results["users"] = self.history.filter_new_users(results["users"])
+
         results["total_repos"] = len(results["repos"])
         results["total_users"] = len(results["users"])
+        results["skipped_repos"] = pre_filter_repos - results["total_repos"]
+        results["skipped_users"] = pre_filter_users - results["total_users"]
 
         log.info(
             f"Discovery complete: {results['total_repos']} repos, "

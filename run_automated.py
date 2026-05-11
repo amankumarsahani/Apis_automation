@@ -13,6 +13,7 @@ from config.settings import settings
 from scanners.discovery import TargetDiscovery
 from orchestrator import ScanOrchestrator
 from utils.email_alerter import EmailAlerter
+from utils.scan_history import ScanHistory
 from utils.logger import setup_logging
 
 log = logging.getLogger(__name__)
@@ -34,7 +35,10 @@ def run_automated_scan(
     log.info(f"Time: {datetime.now().isoformat()}")
     log.info("=" * 60)
 
-    discovery = TargetDiscovery()
+    history = ScanHistory()
+    log.info(f"Scan history: {history.get_stats()}")
+
+    discovery = TargetDiscovery(scan_history=history)
 
     orgs = []
     if settings.DISCOVERY_ORGS:
@@ -69,14 +73,19 @@ def run_automated_scan(
         batch_size = 10
         for i in range(0, len(repo_urls), batch_size):
             batch = repo_urls[i:i + batch_size]
+            batch_names = targets["repos"][i:i + batch_size]
             log.info(f"Batch {i // batch_size + 1}: scanning {len(batch)} repos...")
             try:
                 result = orchestrator.scan_urls(batch)
-                all_findings.extend(result.get("findings", []))
+                batch_findings = result.get("findings", [])
+                all_findings.extend(batch_findings)
                 all_active += result.get("active_keys", 0)
                 all_inactive += result.get("inactive_keys", 0)
                 if result.get("sheet_url"):
                     sheet_url = result["sheet_url"]
+                for repo_name in batch_names:
+                    findings_for_repo = sum(1 for f in batch_findings if repo_name in f.get("repo", ""))
+                    history.record_repo_scan(repo_name, findings_for_repo)
             except Exception as e:
                 log.error(f"Batch scan failed: {e}")
             finally:
@@ -87,15 +96,19 @@ def run_automated_scan(
         for username in targets["users"]:
             try:
                 result = orchestrator.scan_user(username, max_repos=20)
-                all_findings.extend(result.get("findings", []))
+                user_findings = result.get("findings", [])
+                all_findings.extend(user_findings)
                 all_active += result.get("active_keys", 0)
                 all_inactive += result.get("inactive_keys", 0)
                 if result.get("sheet_url"):
                     sheet_url = result["sheet_url"]
+                history.record_user_scan(username, len(user_findings))
             except Exception as e:
                 log.error(f"User scan failed for {username}: {e}")
             finally:
                 orchestrator.scanner.clear_findings()
+
+    history.save()
 
     combined_results = {
         "total_findings": len(all_findings),
